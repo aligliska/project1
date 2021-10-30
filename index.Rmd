@@ -1,0 +1,254 @@
+---
+title: 'Project 1: Wrangling, Exploration, Visualization'
+author: "SDS322E"
+date: ''
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: no
+      smooth_scroll: yes
+  pdf_document:
+    toc: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, fig.align = "center", warning = F, message = F,
+tidy=TRUE, tidy.opts=list(width.cutoff=60), R.options=list(max.print=100))
+```
+
+## Data Wrangling, Exploration, Visualization
+
+### Alice Gee, ag67642
+
+#### Introduction 
+
+*Since I can remember I have been an avid dog lover. Whether it was reading dog fact books or watching Animal Planet shows about dogs, I was often found surrounding myself in things related to this animal. Since I adopted my first dog last year, my love for dogs has only grown. In this project, I will be looking at the relationship between dog breeds, their overall size (i.e. height and weight), and how it correlates with temperament/behaviors. I will also look at variables like puppy prices, their group distinction, and intelligence levels.*
+
+```{R}
+library(tidyverse)
+data1 <- read_csv("AKC_Breed_Info.csv")
+data2 <- read_csv("Dog_Breed_Characteristics.csv")
+```
+
+#### Tidying: Reshaping
+
+```{R}
+# pivot_longer and pivot_wider will be used to reshape the datasets in the wrangling section.  
+```
+
+    
+#### Joining/Merging
+
+```{R}
+joined_data <- inner_join(data1, data2, by = c("Breed"="BreedName"))
+joined_data %>% nrow
+anti_join(data1, data2, by=c("Breed" = "BreedName")) %>% nrow
+anti_join(data2, data1, by=c("BreedName" = "Breed")) %>% nrow
+full_join(data1, data2, by=c("Breed" = "BreedName")) %>% nrow
+```
+*I used inner_join to join the two data sets together based on the breed of dogs. By doing this, I can make direct comparisons between physical and temperament attributes that make up each breed of dog. Moreover, I can compare across the classification of dog breeds to analyze the attributes that make up the classes of dogs. In data1, there were originally 150 observations, all of which were distinct entries. In data2, there were originally 250 observations, all of which were also distinct entries. 44 dog breeds were observed in data1 and not in data2, which 143 dog breeds were observed in data2 and not in data1. Overall, the joined dataset (after using inner join) had 107 distinct entries, with 187 dog breeds that were not included in the joined dataset. I chose to use inner join instead of other join methods to minimize the appearance of NAs during analysis and to minimize the nuanced naming of dog breeds that further distinguish within a breed classification.*
+
+####  Wrangling
+
+```{R}
+# renaming and deleting irrelevant variables 
+joined_data <- joined_data %>% mutate(Group2 = str_replace_all(Group2, "Terrier", "Terrier2")) %>%
+  mutate(Group1 = str_replace_all(Group1, "[ ]", "-"))
+joined_data <- joined_data %>% pivot_longer(7:8, names_to = "GroupingNumber", values_to = "GroupClassification")
+joined_data <- joined_data %>% select(-AltBreedName, -MaleWtKg, -MalaysiaGuardedDog, -MalaysiaProhibitedDog, -MalaysiaPopularity, -PopularityUS2017)
+joined_data <- joined_data %>% rename(LowHeightInches = height_low_inches) %>% 
+  rename(HighHeightInches = height_high_inches) %>% rename(LowWeightLbs = weight_low_lbs) %>%
+  rename(HighWeightLbs = weight_high_lbs) %>% rename(Temperament = Temperment) %>% 
+  rename(IntelligenceRating = Intelligence)
+
+# selecting relevant temperament 
+joined_data <- joined_data %>% separate_rows(Temperament, sep = ", ") %>% 
+  mutate(Indicator = 1, .after = Temperament) %>% pivot_wider(names_from = Temperament, values_from = Indicator)
+joined_data <- joined_data %>% select(Breed:GroupClassification, Alert, Friendly, Affectionate, Loyal, Gentle, 
+                          Independent, Protective, Playful) 
+
+# creating indicator values for each temperament 
+joined_data <- joined_data %>% mutate(Alert = ifelse(is.na(Alert), 0, Alert)) %>% 
+  mutate(Friendly = ifelse(is.na(Friendly), 0, Friendly)) %>%
+  mutate(Affectionate = ifelse(is.na(Affectionate), 0, Affectionate)) %>% 
+  mutate(Loyal = ifelse(is.na(Loyal), 0, Loyal)) %>%
+  mutate(Gentle = ifelse(is.na(Gentle), 0, Gentle)) %>% 
+  mutate(Independent = ifelse(is.na(Independent), 0, Independent)) %>%
+  mutate(Protective = ifelse(is.na(Protective), 0, Protective)) %>%
+  mutate(Playful = ifelse(is.na(Playful), 0, Playful))
+
+# tidying data 
+joined_data <- joined_data %>% pivot_wider(names_from = GroupingNumber, values_from = GroupClassification) %>%
+  mutate(FirstClassification = Group1, .after = Watchdog) %>% 
+  mutate(SecondClassification = Group2, .after = FirstClassification) %>% select(-Group1, -Group2)
+
+# editing bad data value (which was entered in centimeters instead of inches)
+clean_joined_data <- joined_data %>% filter(!is.na(LowHeightInches))
+vizsla_data <- clean_joined_data %>% filter(Breed == "Vizsla") %>% mutate(LowHeightInches = LowHeightInches/2.54) %>% 
+  mutate(HighHeightInches = HighHeightInches/2.54)
+clean_joined_data <- clean_joined_data %>% filter(Breed != "Vizsla")
+clean_joined_data <- rbind(clean_joined_data, vizsla_data)
+
+# creating a variable for average height and weight 
+clean_joined_data <- clean_joined_data %>% mutate(AvgHeightInches = (LowHeightInches+HighHeightInches)/2, .after="Breed") %>% mutate(AvgWeightLbs = (LowWeightLbs+HighWeightLbs)/2, .after="HighHeightInches")
+
+# tidying data
+clean_joined_data <- clean_joined_data %>% pivot_longer(13:20, names_to = "Temperament", values_to = "Indicator")
+clean_joined_data <- clean_joined_data %>% group_by(Breed, FirstClassification) %>% arrange(desc(AvgPupPrice))
+
+# insertion of average height based on first classification into joined_data 
+temp <- clean_joined_data %>% group_by(FirstClassification) %>% 
+  summarize(MeanHeight = mean(AvgHeightInches, na.rm = TRUE))
+clean_joined_data <- left_join(clean_joined_data, temp)
+```
+*In the first section, I did preliminary cleaning of the joined dataset by renaming or removing irrelevant variables. Variable names were changed to match the naming convention of overall dataset or to make the variable name more clear. Variables such as popularity or alternative breed names were removed due to low relevance to this analysis.  In the second section, I split the temperament column into individual attributes and selected behaviors of interest that were most common amongst the set of dog breeds. The third section is an extension of the second section in which I added indicator values (0 or 1) for each temperament to see which breeds had what temperament. In sections four and seven, I reshaped and tidied the dataset to make it easier to analyze. In section five, I identified the outlier data (i.e. Vizsla) whose height was entered in the wrong units. After conversion from centimeters into inches, I added the Vizsla data values back into the joined dataset. To make analysis across height and weight easier, I combined the minimum and maximum height/weights to create a new column for average heights/weights in section six. For section eight, I created a new variable based on average height across first classification of dog breeds, which will be used for plot #3.*
+
+#### Statistical Analysis for Numerical Variables 
+```{r}
+# Minimum, maximum, and average height across first classification of dog breed
+clean_joined_data %>% group_by(FirstClassification) %>% summarize(AvgHeight = mean(AvgHeightInches, na.rm = TRUE), 
+          MinHeight = min(LowHeightInches, na.rm = TRUE), 
+          MaxHeight = max(HighHeightInches, na.rm = TRUE)) %>% knitr::kable()
+
+# Minimum, maximum, and average weight across first classification of dog breed
+clean_joined_data %>% group_by(FirstClassification) %>% summarize(AvgWeight = mean(AvgWeightLbs, na.rm = TRUE), 
+          MinWeight = min(LowWeightLbs, na.rm = TRUE), 
+          MaxWeight = max(HighWeightLbs, na.rm = TRUE)) %>% knitr::kable()
+
+# Average puppy price across both classifications of dog breed
+clean_joined_data %>% group_by(FirstClassification, SecondClassification) %>% 
+  summarize(AvgPrice = mean(AvgPupPrice, na.rm = TRUE)) %>% knitr::kable()
+
+# Standard deviation of puppy price across first classification of dog breed 
+clean_joined_data %>% group_by(FirstClassification) %>% 
+  summarize(StdDevPrice = sd(AvgPupPrice, na.rm = TRUE)) %>% knitr::kable()
+
+# Average and standard deviation of intelligence ratings across first classification of dog breed
+clean_joined_data %>% group_by(FirstClassification) %>% 
+  summarize(AvgIntelligence = mean(IntelligenceRating, na.rm = TRUE), 
+            StdDevIntelligence = sd(IntelligenceRating, na.rm = TRUE)) %>% knitr::kable()
+
+# Average watchdog rating across both classifications of dog breed 
+clean_joined_data %>% group_by(FirstClassification, SecondClassification) %>% 
+  summarize(AvgWatchdogScore = mean(Watchdog, na.rm = TRUE)) %>% 
+  arrange(desc(AvgWatchdogScore)) %>% knitr::kable()
+
+# Frequency of temperament occurrence (using Indicator) across first classification of dog breeds
+clean_joined_data %>% group_by(Temperament, FirstClassification) %>% summarize(Frequency = mean(Indicator)) %>% 
+  arrange(desc(Frequency))
+```
+
+#### Statistical Analysis for Categorical Variables 
+```{r}
+# Counts for each breed entry/row
+clean_joined_data %>% ungroup() %>% count(Breed)
+
+# Counts for first classification of breed
+clean_joined_data %>% ungroup() %>% count(FirstClassification) %>% knitr::kable()
+
+# Counts for second classification of breed 
+clean_joined_data %>% ungroup() %>% count(SecondClassification) %>% knitr::kable()
+
+# Counts for temperament occurrence across breeds
+clean_joined_data %>% group_by(Temperament) %>% summarize(Frequency = sum(Indicator)) %>% knitr::kable()
+```
+
+#### Overall Statistical Analysis 
+```{r}
+# Minimum, maximum, and average height
+clean_joined_data %>% ungroup() %>% summarize(AvgHeight = mean(AvgHeightInches, na.rm = TRUE), 
+          MinHeight = min(LowHeightInches, na.rm = TRUE), 
+          MaxHeight = max(HighHeightInches, na.rm = TRUE)) %>% knitr::kable()
+
+# Minimum, maximum, and average weight
+clean_joined_data %>% ungroup() %>% summarize(AvgWeight = mean(AvgWeightLbs, na.rm = TRUE), 
+          MinWeight = min(LowWeightLbs, na.rm = TRUE), 
+          MaxWeight = max(HighWeightLbs, na.rm = TRUE)) %>% knitr::kable()
+
+# Average and standard deviation of puppy price 
+clean_joined_data %>% ungroup() %>% summarize(AvgPrice = mean(AvgPupPrice, na.rm = TRUE), 
+                          StdDevPrice = sd(AvgPupPrice, na.rm = TRUE)) %>% knitr::kable() 
+
+# Average and standard deviation of intelligence ratings 
+clean_joined_data %>% ungroup() %>% summarize(AvgIntelligence = mean(IntelligenceRating, na.rm = TRUE), 
+            StdDevIntelligence = sd(IntelligenceRating, na.rm = TRUE)) %>% knitr::kable()
+
+# Average watchdog rating
+clean_joined_data %>% ungroup() %>% summarize(AvgWatchdogScore = mean(Watchdog, na.rm = TRUE)) %>% knitr::kable()
+
+# Frequency of temperament occurrence (using Indicator)
+clean_joined_data %>% group_by(Temperament) %>% summarize(Frequency = mean(Indicator)) %>% 
+  arrange(desc(Frequency)) %>% knitr::kable()
+
+
+# NA count across numerical and categorical variables (excluding AvgHeightInches and AvgWeightLbs)
+joined_data %>% pivot_longer(11:18, names_to = "Temperament", values_to = "Indicator") %>%
+  summarize_all(function(x) sum(is.na(x)))
+
+## NOTE: AvgHeightInches and AvgWeightLbs were calculated and added to the joined dataset  
+## after removing NAs from the height/weight columns.
+
+# NA count for all variables after cleaning some NA values. 
+clean_joined_data %>% ungroup() %>% summarize_all(function(x) sum(is.na(x)))
+```
+
+#### Visualizing
+
+```{r}
+library(ggplot2)
+```
+
+```{R}
+# Plot 1
+# Height vs. Weight  
+clean_joined_data %>% ggplot(aes(x=AvgHeightInches, y = AvgWeightLbs)) + 
+  geom_point(aes(color = FirstClassification)) + 
+  geom_smooth(method = "lm") + 
+  scale_x_continuous(breaks = seq(0,60,5)) + scale_y_continuous(breaks = seq(0,200,25)) + 
+  theme(axis.text.x = element_text(hjust=0.5, vjust = -0.25)) + 
+  ggtitle("Average Height vs. Average Weight across Breeds and 1st Classification") + 
+  xlab("Average Height (inches)") + ylab("Average Weight (lbs)")
+
+clean_joined_data %>% ungroup() %>% summarize(cor(AvgHeightInches, AvgWeightLbs, use = "pair"))
+```
+*This plot shows the regression between the average height vs. the average weight of each dog breed, colored based on their first classification. As seen, there is an positive linear trend between height and weight. As the dog breeds increase in height, their weight also increases, with some outliers being more heavy in proportion to their height. This plot highlights that most general working dogs are larger/heavier than the other categories of dogs, with the exception that there is some overlap with Hounds, Herding, and Sporting dogs at shorter heights. In contrast, non-sporting, terriers, and toy breeds are the smallest breeds of dogs. It is notable that sporting and herding dogs both have a medium sized body and overlapping height to weight proportions. This makes sense as both categories of dogs undergo high physical activity and are tall enough to complete their tasks (but not large enough to be more susceptible to health issues). In general, medium sized dogs typically have a healthier physique and are less prone to joint issues like hip dysplasia (which is prevalent throughout large breeds), and are thus more likely to be chosen for high physical demanding jobs. Overall, this plot illustrates the strong positive correlation between height and weight, while also highlighting the differences in physical differences between the different categories of dog breeds.*
+
+Your discussion of plot 1
+
+```{R}
+# Plot 2
+# First classification vs. Pup Price 
+clean_joined_data %>% ggplot(aes(x=FirstClassification, y=AvgPupPrice)) + geom_boxplot() + 
+  geom_jitter(alpha = 0.5, aes(color = SecondClassification)) + 
+  scale_y_continuous(breaks = seq(0, 3000, 500)) + 
+  theme(axis.text.x = element_text(angle = 45, hjust=1)) + 
+  ggtitle("Average Puppy Price based on Classification of Breed") + 
+  xlab("First Classification") + ylab("Average Puppy Price ($)")
+```
+*This plot is a comparison of average puppy price across the first classification of dog breeds. Within each first grouping, there is an illustration of pricing across the second classification of the dog breeds. Overall this plot indicates that the three breeds that are typically less expensive are toy, non-sporting, and hound breeds, with non-sporting having a few expensive puppy prices as outliers. Based on median price, herding and working dogs are the most expensive dogs. Overall, the puppy prices for herding, sporting, terrier, and working breeds are similar when focusing on values above the 3rd quartile range. In terms of variance, herding and toy breeds have the least amount of spread while sporting, working, and non-sporting have the most spread and/or outliers.*
+
+
+```{R}
+# Plot 3
+# Temperament Frequency vs. First Classification 
+clean_joined_data %>% ggplot(aes(x=Temperament, fill = Temperament)) + 
+  geom_bar(aes(y=Indicator), stat = "summary", fun = mean) + 
+  geom_point(aes(y = MeanHeight/100, size = MeanHeight)) + 
+  facet_grid(~FirstClassification) + 
+  theme(axis.text.x = element_text(angle = 45, hjust=1)) + 
+  ggtitle("Temperament Frquency across Classification of Dog Breeds") + 
+  xlab("Temperament Traits") + ylab("Frequency of Temperament") + coord_flip()
+```
+*This plot highlights the temperament frequency across first classification of dog breeds and illustrates the average height for each classification. By doing this, it is possible to see if height is a contributing factor to temperament, and thus in turn a contributor to overall classification. The most obvious trend based on height is among the toy breeds. In terms of temperament, they are observed to not be protective of their owners and are typically not independent. This most likely is due to their small size, which is significantly smaller than the other groups. While seemingly negative, these dogs were most likely bred for these traits as toy breeds are typically bred for looks and status appeal. These dogs are often carried around by their owners (i.e. on laps, in bags, or simply holding), thus it would be more beneficial for these dogs to be dependent on their owners rather than struggling for independence. For the other groups of dog breeds, excluding herding, these groups have a medium to tall average height and are more well-rounded in terms of temperament frequency. For the most part, these groups contain dogs that have some/all of these traits, except for protectiveness in hounds. These findings are significant especially in regards to working and sporting dogs. Selection of all of these positive traits when breeding gives rise to more balanced and trainable dogs, which is important for task completion and environmental stability (not reactive to distractions). Similarly, herding dogs are bred for a specific task and illustrates those corresponding traits on the graph. Along with a medium-large body size, herding dogs have been selected for protectiveness, loyalty, and alertness. Overall, this plot demonstrates the correspondence between temperament, size, and breed classification, giving insight on how dogs were originally bred for this intended role.*
+
+#### Concluding Remarks
+
+*Here's two of my favorite pictures of my dog HoiSum!*
+
+<img src="HoiSum1.jpg" style=width:40% class="img-square">
+<img src="HoiSum2.jpg" style=width:40% class="img-square">
+
+
+
+
