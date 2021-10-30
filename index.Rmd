@@ -23,7 +23,7 @@ tidy=TRUE, tidy.opts=list(width.cutoff=60), R.options=list(max.print=100))
 
 #### Introduction 
 
-*Since I can remember I have been an avid dog lover. Whether it was reading dog fact books or watching Animal Planet shows about dogs, I was often found surrounding myself in things related to this animal. Since I adopted my first dog last year, my love for dogs has only grown. In this project, I will be looking at the relationship between dog breeds, their overall size (i.e. height and weight), and how it correlates with temperament/behaviors. I will also look at variables like puppy prices, their group distinction, and intelligence levels.*
+*Since I can remember I have been an avid dog lover. Whether it was reading dog fact books or watching Animal Planet shows about dogs, I was often found surrounding myself in things related to this animal. Since I adopted my first dog last year, my love for dogs has only grown. In this project, I will be looking at the relationship between dog breeds, their overall size (i.e. height and weight), and how it correlates with temperament/behaviors. I will also look at variables like puppy prices, group distinction, and intelligence levels.*
 
 ```{R}
 library(tidyverse)
